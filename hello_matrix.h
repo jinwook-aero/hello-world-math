@@ -193,7 +193,7 @@ template <typename T>
 Matrix<T> Matrix<T>::operator+(const Matrix& rhs) // Element-wise addition
 {
 	Matrix<T> tempMat{ _nRow,_nCol };
-	if (!IsEqualSize(*this, rhs)){
+	if (!IsEqualSize(*this, rhs)) {
 		tempMat._validity = false;
 		return tempMat;
 	}
@@ -251,11 +251,9 @@ Matrix<T> Matrix<T>::ElemDivide(const Matrix& rhs) // Element-wise division
 template <typename T>
 Matrix<T> Matrix<T>::operator*(const Matrix& rhs) 
 // Matrix multiplication
-// Reference: What every programmer needs to know about memory (https://akkadia.org/drepper/cpumemory.pdf)
+// Reference1: What every programmer needs to know about memory (https://akkadia.org/drepper/cpumemory.pdf)
+// Reference2: Strassen algorithm (https://en.wikipedia.org/wiki/Strassen_algorithm)
 {
-	// Operator constant
-	const int subMatrixSize = 2000;
-
 	// Size ID
 	size_t nRow0 = this->_nRow;
 	size_t nSum0 = this->_nCol;
@@ -268,40 +266,73 @@ Matrix<T> Matrix<T>::operator*(const Matrix& rhs)
 		return tempMat;
 	}
 	
-	// Submatrix operation
-	if (nRow0 > subMatrixSize){
-		size_t iRowCut = nRow0 / 2;
-		Matrix<T> mat0 = *this;
-		Matrix<T> top = mat0(      0, iRowCut-1, 0, this->_nCol -1);
-		Matrix<T> bot = mat0(iRowCut,   nRow0-1, 0, this->_nCol -1);
-		const Matrix<T> sum0 = top * rhs;
-		const Matrix<T> sum1 = bot * rhs;
-		Matrix<T> sum = Matrix<T>::RowMerge(sum0, sum1);
-		return sum;
-	}
-	if (nCol0 > subMatrixSize) {
-		size_t iColCut = nCol0 / 2;
-		Matrix<T> mat0 = rhs;
-		Matrix<T> left  = mat0(0, rhs._nRow - 1,       0, iColCut-1);
-		Matrix<T> right = mat0(0, rhs._nRow - 1, iColCut,   nCol0-1);
-		const Matrix<T> sum0 = *this * left;
-		const Matrix<T> sum1 = *this * right;
-		Matrix<T> sum = Matrix<T>::ColMerge(sum0, sum1);
-		return sum;
+	// Strassen algorithm for multiplication between square matrices
+	const int subMatrixSize = 250; // submatrix split
+	if ((nRow0> subMatrixSize) && (this->_nRow == this->_nCol) && (rhs._nRow == rhs._nCol)){
+		// Adjustment to 2^n and 2^n
+		size_t nRow2 = (nRow0 % 2 == 0) ? nRow0 : nRow0 + 1;
+		size_t nCol2 = nRow2; // Square matrix
+		size_t nCut  = nRow2 / 2;
+
+		Matrix<T> A{ nRow2,nCol2 };
+		Matrix<T> B{ nRow2,nCol2 };
+		for (size_t iRow = 0; iRow < nRow2; ++iRow) {
+		for (size_t iCol = 0; iCol < nCol2; ++iCol) {
+			if ((iRow < nRow0) && (iCol < nCol0)) {
+				A._elemData[iRow * nCol2 + iCol] = this->_elemData[iRow * this->_nCol + iCol];
+				B._elemData[iRow * nCol2 + iCol] = rhs._elemData[  iRow * rhs._nCol   + iCol];
+			}
+			else {
+				A._elemData[iRow * nCol2 + iCol] = 0;
+				B._elemData[iRow * nCol2 + iCol] = 0;
+			}
+		}
+		}
+		Matrix<T> A11 = A(   0, nCut  - 1,    0, nCut  - 1);
+		Matrix<T> A12 = A(   0, nCut  - 1, nCut, nCol2 - 1);
+		Matrix<T> A21 = A(nCut, nRow2 - 1,    0, nCut  - 1);
+		Matrix<T> A22 = A(nCut, nRow2 - 1, nCut, nCol2 - 1);
+		Matrix<T> B11 = B(   0, nCut  - 1,    0, nCut  - 1);
+		Matrix<T> B12 = B(   0, nCut  - 1, nCut, nCol2 - 1);
+		Matrix<T> B21 = B(nCut, nRow2 - 1,    0, nCut  - 1);
+		Matrix<T> B22 = B(nCut, nRow2 - 1, nCut, nCol2 - 1);
+
+		Matrix<T> M1 = (A11 + A22) * (B11 + B22);
+		Matrix<T> M2 = (A21 + A22) * B11;
+		Matrix<T> M3 = A11 * (B12 - B22);
+		Matrix<T> M4 = A22 * (B21 - B11);
+		Matrix<T> M5 = (A11 + A12) * B22;
+		Matrix<T> M6 = (A21 - A11) * (B11 + B12);
+		Matrix<T> M7 = (A12 - A22) * (B21 + B22);
+
+		const Matrix<T> C11 = M1 + M4 - M5 + M7;
+		const Matrix<T> C12 = M3 + M5;
+		const Matrix<T> C21 = M2 + M4;
+		const Matrix<T> C22 = M1 - M2 + M3 + M6;
+
+		Matrix<T> sum = Matrix<T>::ColMerge(Matrix<T>::RowMerge(C11, C21), Matrix<T>::RowMerge(C12, C22));
+		return sum(0,nRow0-1,0,nCol0-1);
 	}
 
 	// Transpose rhs to optimize cache access
 	Matrix<T> rhsT = rhs;
 	rhsT = rhsT.Transpose();
-	
-	T tempSum;
+
+	// Use split summation to aid compiler for instruction pipelining
+	const size_t sumSplit = 4; // Increasing beyond 4 is not effective (1:1.34, 2:0.75, 4: 0.64, 5: 0.68, 10: 0.70)
+	T tempSum0, tempSum1, tempSum2, tempSum3;
 	for (size_t iRow = 0; iRow < nRow0; ++iRow) {
 	for (size_t iCol = 0; iCol < nCol0; ++iCol) {
-		tempSum = 0;
-		for (size_t iSum = 0; iSum < nSum0; ++iSum) {
-			tempSum += this->_elemData[iRow * this->_nCol + iSum] * rhsT._elemData[iCol * rhsT._nCol + iSum];
+		tempSum0 = 0; tempSum1 = 0; tempSum2 = 0; tempSum3 = 0;
+		for (size_t iSum = 0; iSum < nSum0/sumSplit; ++iSum) {
+			tempSum0 += this->_elemData[iRow * this->_nCol + iSum * sumSplit + 0] * rhsT._elemData[iCol * rhsT._nCol + iSum * sumSplit + 0];
+			tempSum1 += this->_elemData[iRow * this->_nCol + iSum * sumSplit + 1] * rhsT._elemData[iCol * rhsT._nCol + iSum * sumSplit + 1];
+			tempSum2 += this->_elemData[iRow * this->_nCol + iSum * sumSplit + 2] * rhsT._elemData[iCol * rhsT._nCol + iSum * sumSplit + 2];
+			tempSum3 += this->_elemData[iRow * this->_nCol + iSum * sumSplit + 3] * rhsT._elemData[iCol * rhsT._nCol + iSum * sumSplit + 3];
 		}
-		tempMat._elemData[iRow * nCol0 + iCol] = tempSum;
+		for (size_t iSum = (nSum0 / sumSplit)*sumSplit; iSum < nSum0; ++iSum)
+			tempSum0 += this->_elemData[iRow * this->_nCol + iSum] * rhsT._elemData[iCol * rhsT._nCol + iSum ];
+		tempMat._elemData[iRow * nCol0 + iCol] = tempSum0 +tempSum2 + tempSum3;
 	}
 	}
 	

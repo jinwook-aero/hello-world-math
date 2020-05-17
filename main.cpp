@@ -20,10 +20,10 @@ int main()
 	Matrix<> R2{ matSize,matSize,1,false,true }; // non-diagonal random number matrix
 
 	auto start = std::chrono::high_resolution_clock::now();
-	Matrix<> D = I*R1;
+	Matrix<> D = R1*R2;
 	auto stop = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
-	std::cout << duration.count() << std::endl;
+	std::cout << duration.count() << " ms" << std::endl;
 	
 	/*
 	invalid.Display();

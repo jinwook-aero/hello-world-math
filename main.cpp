@@ -13,24 +13,25 @@
 
 int main()
 {
-	const size_t matSize = 1000;
-	Matrix<double> invalid{};
-	Matrix<> I{ matSize,matSize,1,true }; // identity matrix
+	const size_t matSize = 4096;
 	Matrix<> R1{ matSize,matSize,1,false,true }; // non-diagonal random number matrix
 	Matrix<> R2{ matSize,matSize,1,false,true }; // non-diagonal random number matrix
 
-	auto start = std::chrono::high_resolution_clock::now();
-	Matrix<> D = R1*R2;
-	auto stop = std::chrono::high_resolution_clock::now();
-	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
-	std::cout << duration.count() << " ms" << std::endl;
-	
-	/*
-	invalid.Display();
-	R1.Display(0, 5, 0, 5);
-	R2.Display(0, 5, 0, 5);
-	D.Display(0,5,0,5);
-	*/
+	Matrix <> SlowM, FastM;
+	for (size_t round = 0 ; round <2 ; ++round){
+		auto start = std::chrono::high_resolution_clock::now();
+		if (round == 0)
+			SlowM = R1.SlowMultiply(R2);
+		else
+			FastM = R1*R2;
+		auto stop = std::chrono::high_resolution_clock::now();
+		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
+		std::cout << "Round " << round << "\t: " << duration.count() << " ms" << std::endl;
+	}
+	if (SlowM == FastM)
+		std::cout << "Results are equal" << std::endl;
+	else
+		std::cout << "Results are not equal" << std::endl;
 
 	// End of program
 	return 0;

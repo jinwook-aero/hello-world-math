@@ -25,8 +25,8 @@ public:
 	~Matrix();
 	
 	// Element access or submatrix
-	T& operator()(size_t iRow, size_t iCol);
-	Matrix operator()(size_t iRowMin, size_t iRowMax, size_t iColMin, size_t iColMax); // Row-Col range
+	constexpr T& operator()(const size_t iRow, const size_t iCol);
+	constexpr Matrix operator()(const size_t iRowMin, const size_t iRowMax, const size_t iColMin, const size_t iColMax); // Row-Col range
 
 	// Diplay the elements of matrix in provided range
 	void Display(); // All range
@@ -44,6 +44,7 @@ public:
 
 	// Matrix operation
 	Matrix operator*(const Matrix&); // Matrix multiplication
+	Matrix SlowMultiply(const Matrix&); // Slow matrix multiplication for benchmark
 	Matrix BackSlash(const Matrix&); // A\b (== inv(A)*b) is implemented as A.backSlash(b)
 	Matrix Transpose(); // Transpose of matrix
 	Matrix Inverse();   // Inverse of matrix
@@ -120,13 +121,13 @@ Matrix<T>::Matrix(const Matrix& rhs) // Copy constructor
 
 // Element access or submatrix
 template <typename T>
-T & Matrix<T>::operator()(size_t iRow, size_t iCol)
+constexpr T & Matrix<T>::operator()(const size_t iRow, const size_t iCol)
 {
 	return _elemData[iRow * _nCol + iCol];
 }
 
 template <typename T>
-Matrix<T> Matrix<T>::operator()(size_t iRowMin, size_t iRowMax, size_t iColMin, size_t iColMax)
+constexpr Matrix<T> Matrix<T>::operator()(const size_t iRowMin, const size_t iRowMax, const size_t iColMin, const size_t iColMax)
 {
 	const size_t nRowLhs0 = iRowMax - iRowMin + 1;
 	const size_t nColLhs0 = iColMax - iColMin + 1;
@@ -183,9 +184,22 @@ void Matrix<T>::Display()
 template <typename T>
 bool Matrix<T>::operator==(const Matrix& rhs) // If all elements are identical
 {
-	for (size_t iRun = 0; iRun < _nRow* _nCol; ++iRun)
-		if (this->_elemData[iRun] != rhs._elemData[iRun])
-			return false;
+	// Equality threshold
+	const T eps = static_cast<T>(1);
+
+	// Size check
+	if (!IsEqualSize(*this, rhs)) {
+		return false;
+	}
+
+	// Diff
+	T diffSum = 0;
+	for (size_t iRun = 0; iRun < _nRow * _nCol; ++iRun) {
+		const T diffLocal = (this->_elemData[iRun] - rhs._elemData[iRun]);
+		diffSum += diffLocal * diffLocal;
+	}
+	if (diffSum > eps)
+		return false;
 	return true;
 }
 
@@ -249,15 +263,41 @@ Matrix<T> Matrix<T>::ElemDivide(const Matrix& rhs) // Element-wise division
 
 // Matrix arithmetic
 template <typename T>
+Matrix<T> Matrix<T>::SlowMultiply(const Matrix& rhs)
+// Slow matrix multiplication
+{
+	// Size ID
+	const size_t nRow0 = this->_nRow;
+	const size_t nSum0 = this->_nCol;
+	const size_t nCol0 = rhs._nCol;
+	Matrix<T> tempMat{ nRow0,nCol0 };
+
+	// Validity check
+	if (this->_nCol != rhs._nRow) {
+		tempMat._validity = false;
+		return tempMat;
+	}
+	// Very naive multiplication
+	for (size_t iRow = 0; iRow < nRow0; ++iRow) {
+		for (size_t iCol = 0; iCol < nCol0; ++iCol) {
+			for (size_t iSum = 0; iSum < nSum0; ++iSum) {
+				tempMat._elemData[iRow * nCol0 + iCol] += this->_elemData[iRow * this->_nCol + iSum] * rhs._elemData[iSum * rhs._nCol + iCol];
+			}
+		}
+	}
+	return tempMat;
+}
+
+template <typename T>
 Matrix<T> Matrix<T>::operator*(const Matrix& rhs) 
 // Matrix multiplication
 // Reference1: What every programmer needs to know about memory (https://akkadia.org/drepper/cpumemory.pdf)
 // Reference2: Strassen algorithm (https://en.wikipedia.org/wiki/Strassen_algorithm)
 {
 	// Size ID
-	size_t nRow0 = this->_nRow;
-	size_t nSum0 = this->_nCol;
-	size_t nCol0 = rhs._nCol;
+	const size_t nRow0 = this->_nRow;
+	const size_t nSum0 = this->_nCol;
+	const size_t nCol0 = rhs._nCol;
 	Matrix<T> tempMat{ nRow0,nCol0 };
 
 	// Validity check
@@ -267,7 +307,7 @@ Matrix<T> Matrix<T>::operator*(const Matrix& rhs)
 	}
 	
 	// Strassen algorithm for multiplication between square matrices
-	const int subMatrixSize = 250; // submatrix split
+	const int subMatrixSize = 1024; // submatrix split ~ 1024 seems optimal
 	if ((nRow0> subMatrixSize) && (this->_nRow == this->_nCol) && (rhs._nRow == rhs._nCol)){
 		// Adjustment to 2^n and 2^n
 		size_t nRow2 = (nRow0 % 2 == 0) ? nRow0 : nRow0 + 1;
@@ -318,24 +358,38 @@ Matrix<T> Matrix<T>::operator*(const Matrix& rhs)
 	Matrix<T> rhsT = rhs;
 	rhsT = rhsT.Transpose();
 
-	// Use split summation to aid compiler for instruction pipelining
+	// Use blocking for cache access optimization
+	// and split summation for instruction pipelining
 	const size_t sumSplit = 4; // Increasing beyond 4 is not effective (1:1.34, 2:0.75, 4: 0.64, 5: 0.68, 10: 0.70)
+	const size_t blockSize = sumSplit*32; // ~ 128 seems to be optimal
 	T tempSum0, tempSum1, tempSum2, tempSum3;
-	for (size_t iRow = 0; iRow < nRow0; ++iRow) {
-	for (size_t iCol = 0; iCol < nCol0; ++iCol) {
-		tempSum0 = 0; tempSum1 = 0; tempSum2 = 0; tempSum3 = 0;
-		for (size_t iSum = 0; iSum < nSum0/sumSplit; ++iSum) {
-			tempSum0 += this->_elemData[iRow * this->_nCol + iSum * sumSplit + 0] * rhsT._elemData[iCol * rhsT._nCol + iSum * sumSplit + 0];
-			tempSum1 += this->_elemData[iRow * this->_nCol + iSum * sumSplit + 1] * rhsT._elemData[iCol * rhsT._nCol + iSum * sumSplit + 1];
-			tempSum2 += this->_elemData[iRow * this->_nCol + iSum * sumSplit + 2] * rhsT._elemData[iCol * rhsT._nCol + iSum * sumSplit + 2];
-			tempSum3 += this->_elemData[iRow * this->_nCol + iSum * sumSplit + 3] * rhsT._elemData[iCol * rhsT._nCol + iSum * sumSplit + 3];
+	Matrix<T> cBlock;
+	for (size_t ii = 0; ii < nRow0 / blockSize; ++ii) {
+		for (size_t jj = 0; jj < nCol0 / blockSize; ++jj) {
+			for (size_t kk = 0; kk < nSum0 / blockSize; ++kk) {
+				const size_t ii0 = (ii + 0) * blockSize;
+				const size_t ii1 = (ii + 1) * blockSize;
+				const size_t jj0 = (jj + 0) * blockSize;
+				const size_t jj1 = (jj + 1) * blockSize;
+				const size_t kk0 = (kk + 0) * blockSize;
+				const size_t kk1 = (kk + 1) * blockSize;
+				for (size_t iRow = ii0; iRow < ii1; ++iRow) {
+					for (size_t iCol = jj0; iCol < jj1; ++iCol) {
+						tempSum0 = 0; tempSum1 = 0; tempSum2 = 0; tempSum3 = 0;
+						for (size_t iSum = 0; iSum < blockSize / sumSplit; ++iSum) {
+							const size_t iThisB = iRow * this->_nCol + kk0 + iSum * sumSplit;
+							const size_t iRhsB  = iCol * rhsT._nCol  + kk0 + iSum * sumSplit;
+							tempSum0 += this->_elemData[iThisB + 0] * rhsT._elemData[iRhsB + 0];
+							tempSum1 += this->_elemData[iThisB + 1] * rhsT._elemData[iRhsB + 1];
+							tempSum2 += this->_elemData[iThisB + 2] * rhsT._elemData[iRhsB + 2];
+							tempSum3 += this->_elemData[iThisB + 3] * rhsT._elemData[iRhsB + 3];
+						}
+						tempMat._elemData[iRow * nCol0 + iCol] += tempSum0 + tempSum1 + tempSum2 + tempSum3;
+					}
+				}
+			}
 		}
-		for (size_t iSum = (nSum0 / sumSplit)*sumSplit; iSum < nSum0; ++iSum)
-			tempSum0 += this->_elemData[iRow * this->_nCol + iSum] * rhsT._elemData[iCol * rhsT._nCol + iSum ];
-		tempMat._elemData[iRow * nCol0 + iCol] = tempSum0 +tempSum2 + tempSum3;
 	}
-	}
-	
 	return tempMat;
 }
 
@@ -397,6 +451,11 @@ void Matrix<T>::Resize(size_t nRow, size_t nCol)
 	_elemData.clear();
 	_elemData.resize(_nRow*_nCol, 0);
 	//_elemData = new T[_nRow * _nCol];
+
+	if (_nRow*_nCol)
+		_validity = true;
+	else
+		_validity = true;
 }
 
 template <typename T>

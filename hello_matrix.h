@@ -22,7 +22,7 @@ public:
 	Matrix(); // To indicate invalid matrix
 	Matrix(size_t nRow, size_t nCol, T initialVal = 0, bool isDiag = false, bool isRand = false); // Random numbers in the range of [0-initialVal]
 	Matrix(const Matrix&); // Copy constructor
-	~Matrix();
+	~Matrix() = default;
 	
 	// Element access or submatrix
 	constexpr T& operator()(const size_t iRow, const size_t iCol);
@@ -64,13 +64,6 @@ private:
 	Matrix ColMerge(const Matrix&, const Matrix&); // Merge as [LHS, RHS]
 };
 
-// Destructor first
-template <typename T>
-Matrix<T>::~Matrix()
-{
-	//delete[] _elemData; _elemData = nullptr;
-}
-
 // Constructors
 template <typename T>
 Matrix<T>::Matrix():
@@ -78,7 +71,6 @@ _nRow(0), _nCol(0), _validity(false)
 {
 	_elemData.clear();
 	_elemData.resize(0,0);
-	//_elemData = new T[0];
 }
 
 template <typename T>
@@ -87,7 +79,6 @@ _nRow(nRow), _nCol(nCol), _validity(true)
 {
 	_elemData.clear();
 	_elemData.resize(_nRow*_nCol, initialVal);
-	//_elemData = new T[_nRow * _nCol];
 	if (isRand){
 		// Random number generation sequence by : https://stackoverflow.com/questions/9878965/rand-between-0-and-1
 		std::mt19937_64 rng;
@@ -185,7 +176,7 @@ template <typename T>
 bool Matrix<T>::operator==(const Matrix& rhs) // If all elements are identical
 {
 	// Equality threshold
-	const T eps = static_cast<T>(1);
+	const T eps = static_cast<T>(1E-16);
 
 	// Size check
 	if (!IsEqualSize(*this, rhs)) {
@@ -374,9 +365,9 @@ Matrix<T> Matrix<T>::operator*(const Matrix& rhs)
 				const size_t jj1 = std::min(jj + blockSize, nCol0);
 				for (size_t iRow = ii; iRow < ii1; iRow += iReg) {
 					for (size_t iCol = jj; iCol < jj1; iCol += iReg) {
-						tempSum000 = tempSum001 = tempSum002 = tempSum003 = 0;
-						tempSum010 = tempSum011 = tempSum012 = tempSum013 = 0;
-						tempSum100 = tempSum101 = tempSum102 = tempSum103 = 0;
+						tempSum000 = tempSum001 = tempSum002 = tempSum003 = 
+						tempSum010 = tempSum011 = tempSum012 = tempSum013 =
+						tempSum100 = tempSum101 = tempSum102 = tempSum103 =
 						tempSum110 = tempSum111 = tempSum112 = tempSum113 = 0;
 						const size_t iThiB00 = (iRow + 0) * this->_nCol + kk;
 						const size_t iRhsB00 = (iCol + 0) * rhsT._nCol  + kk;
@@ -475,12 +466,11 @@ void Matrix<T>::Resize(size_t nRow, size_t nCol)
 
 	_elemData.clear();
 	_elemData.resize(_nRow*_nCol, 0);
-	//_elemData = new T[_nRow * _nCol];
 
 	if (_nRow*_nCol)
 		_validity = true;
 	else
-		_validity = true;
+		_validity = false;
 }
 
 template <typename T>

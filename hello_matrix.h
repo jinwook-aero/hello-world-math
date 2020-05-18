@@ -363,22 +363,17 @@ Matrix<T> Matrix<T>::operator*(const Matrix& rhs)
 	const size_t sumSplit = 4; // Increasing beyond 4 is not effective (1:1.34, 2:0.75, 4: 0.64, 5: 0.68, 10: 0.70)
 	const size_t blockSize = sumSplit*32; // ~ 128 seems to be optimal
 	T tempSum0, tempSum1, tempSum2, tempSum3;
-	Matrix<T> cBlock;
-	for (size_t ii = 0; ii < nRow0 / blockSize; ++ii) {
-		for (size_t jj = 0; jj < nCol0 / blockSize; ++jj) {
-			for (size_t kk = 0; kk < nSum0 / blockSize; ++kk) {
-				const size_t ii0 = (ii + 0) * blockSize;
-				const size_t ii1 = (ii + 1) * blockSize;
-				const size_t jj0 = (jj + 0) * blockSize;
-				const size_t jj1 = (jj + 1) * blockSize;
-				const size_t kk0 = (kk + 0) * blockSize;
-				const size_t kk1 = (kk + 1) * blockSize;
-				for (size_t iRow = ii0; iRow < ii1; ++iRow) {
-					for (size_t iCol = jj0; iCol < jj1; ++iCol) {
-						tempSum0 = 0; tempSum1 = 0; tempSum2 = 0; tempSum3 = 0;
-						for (size_t iSum = 0; iSum < blockSize / sumSplit; ++iSum) {
-							const size_t iThisB = iRow * this->_nCol + kk0 + iSum * sumSplit;
-							const size_t iRhsB  = iCol * rhsT._nCol  + kk0 + iSum * sumSplit;
+	for (size_t ii = 0; ii < nRow0; ii += blockSize) {
+		for (size_t jj = 0; jj < nCol0; jj += blockSize) {
+			for (size_t kk = 0; kk < nSum0; kk += blockSize) {
+				const size_t ii1 = std::min(ii + blockSize, nRow0);
+				const size_t jj1 = std::min(jj + blockSize, nCol0);
+				for (size_t iRow = ii; iRow < ii1; ++iRow) {
+					for (size_t iCol = jj; iCol < jj1; ++iCol) {
+						tempSum0 = tempSum1 = tempSum2 = tempSum3 = 0;
+						for (size_t iSum = 0; iSum < blockSize; iSum += sumSplit) {
+							const size_t iThisB = iRow * this->_nCol + kk + iSum;
+							const size_t iRhsB  = iCol * rhsT._nCol  + kk + iSum;
 							tempSum0 += this->_elemData[iThisB + 0] * rhsT._elemData[iRhsB + 0];
 							tempSum1 += this->_elemData[iThisB + 1] * rhsT._elemData[iRhsB + 1];
 							tempSum2 += this->_elemData[iThisB + 2] * rhsT._elemData[iRhsB + 2];
@@ -392,7 +387,6 @@ Matrix<T> Matrix<T>::operator*(const Matrix& rhs)
 	}
 	return tempMat;
 }
-
 
 template <typename T>
 Matrix<T> Matrix<T>::BackSlash(const Matrix& rhs) // A\b (== inv(A)*b) is implemented as A.backSlash(b)

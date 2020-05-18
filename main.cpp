@@ -13,7 +13,7 @@
 
 int main()
 {
-	const size_t matSize = 512;
+	const size_t matSize = 1024;
 	Matrix<> R1{ matSize,matSize,1,false,true }; // non-diagonal random number matrix
 	Matrix<> R2{ matSize,matSize,1,false,true }; // non-diagonal random number matrix
 

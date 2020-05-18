@@ -362,24 +362,55 @@ Matrix<T> Matrix<T>::operator*(const Matrix& rhs)
 	// and split summation for instruction pipelining
 	const size_t sumSplit = 4; // Increasing beyond 4 is not effective (1:1.34, 2:0.75, 4: 0.64, 5: 0.68, 10: 0.70)
 	const size_t blockSize = sumSplit*32; // ~ 128 seems to be optimal
-	T tempSum0, tempSum1, tempSum2, tempSum3;
+	const size_t iReg = 2; // Register batch size for iRow and iCol
+	T   tempSum000, tempSum001, tempSum002, tempSum003,
+		tempSum010, tempSum011, tempSum012, tempSum013,
+		tempSum100, tempSum101, tempSum102, tempSum103,
+		tempSum110, tempSum111, tempSum112, tempSum113;
 	for (size_t ii = 0; ii < nRow0; ii += blockSize) {
 		for (size_t jj = 0; jj < nCol0; jj += blockSize) {
 			for (size_t kk = 0; kk < nSum0; kk += blockSize) {
 				const size_t ii1 = std::min(ii + blockSize, nRow0);
 				const size_t jj1 = std::min(jj + blockSize, nCol0);
-				for (size_t iRow = ii; iRow < ii1; ++iRow) {
-					for (size_t iCol = jj; iCol < jj1; ++iCol) {
-						tempSum0 = tempSum1 = tempSum2 = tempSum3 = 0;
+				for (size_t iRow = ii; iRow < ii1; iRow += iReg) {
+					for (size_t iCol = jj; iCol < jj1; iCol += iReg) {
+						tempSum000 = tempSum001 = tempSum002 = tempSum003 = 0;
+						tempSum010 = tempSum011 = tempSum012 = tempSum013 = 0;
+						tempSum100 = tempSum101 = tempSum102 = tempSum103 = 0;
+						tempSum110 = tempSum111 = tempSum112 = tempSum113 = 0;
+						const size_t iThiB00 = (iRow + 0) * this->_nCol + kk;
+						const size_t iRhsB00 = (iCol + 0) * rhsT._nCol  + kk;
+						const size_t iThiB01 = (iRow + 0) * this->_nCol + kk;
+						const size_t iRhsB01 = (iCol + 1) * rhsT._nCol  + kk;
+						const size_t iThiB10 = (iRow + 1) * this->_nCol + kk;
+						const size_t iRhsB10 = (iCol + 0) * rhsT._nCol  + kk;
+						const size_t iThiB11 = (iRow + 1) * this->_nCol + kk;
+						const size_t iRhsB11 = (iCol + 1) * rhsT._nCol  + kk;
 						for (size_t iSum = 0; iSum < blockSize; iSum += sumSplit) {
-							const size_t iThisB = iRow * this->_nCol + kk + iSum;
-							const size_t iRhsB  = iCol * rhsT._nCol  + kk + iSum;
-							tempSum0 += this->_elemData[iThisB + 0] * rhsT._elemData[iRhsB + 0];
-							tempSum1 += this->_elemData[iThisB + 1] * rhsT._elemData[iRhsB + 1];
-							tempSum2 += this->_elemData[iThisB + 2] * rhsT._elemData[iRhsB + 2];
-							tempSum3 += this->_elemData[iThisB + 3] * rhsT._elemData[iRhsB + 3];
+							tempSum000 += this->_elemData[iThiB00 + iSum + 0] * rhsT._elemData[iRhsB00 + iSum + 0];
+							tempSum001 += this->_elemData[iThiB00 + iSum + 1] * rhsT._elemData[iRhsB00 + iSum + 1];
+							tempSum002 += this->_elemData[iThiB00 + iSum + 2] * rhsT._elemData[iRhsB00 + iSum + 2];
+							tempSum003 += this->_elemData[iThiB00 + iSum + 3] * rhsT._elemData[iRhsB00 + iSum + 3];
+
+							tempSum010 += this->_elemData[iThiB01 + iSum + 0] * rhsT._elemData[iRhsB01 + iSum + 0];
+							tempSum011 += this->_elemData[iThiB01 + iSum + 1] * rhsT._elemData[iRhsB01 + iSum + 1];
+							tempSum012 += this->_elemData[iThiB01 + iSum + 2] * rhsT._elemData[iRhsB01 + iSum + 2];
+							tempSum013 += this->_elemData[iThiB01 + iSum + 3] * rhsT._elemData[iRhsB01 + iSum + 3];
+
+							tempSum100 += this->_elemData[iThiB10 + iSum + 0] * rhsT._elemData[iRhsB10 + iSum + 0];
+							tempSum101 += this->_elemData[iThiB10 + iSum + 1] * rhsT._elemData[iRhsB10 + iSum + 1];
+							tempSum102 += this->_elemData[iThiB10 + iSum + 2] * rhsT._elemData[iRhsB10 + iSum + 2];
+							tempSum103 += this->_elemData[iThiB10 + iSum + 3] * rhsT._elemData[iRhsB10 + iSum + 3];
+
+							tempSum110 += this->_elemData[iThiB11 + iSum + 0] * rhsT._elemData[iRhsB11 + iSum + 0];
+							tempSum111 += this->_elemData[iThiB11 + iSum + 1] * rhsT._elemData[iRhsB11 + iSum + 1];
+							tempSum112 += this->_elemData[iThiB11 + iSum + 2] * rhsT._elemData[iRhsB11 + iSum + 2];
+							tempSum113 += this->_elemData[iThiB11 + iSum + 3] * rhsT._elemData[iRhsB11 + iSum + 3];
 						}
-						tempMat._elemData[iRow * nCol0 + iCol] += tempSum0 + tempSum1 + tempSum2 + tempSum3;
+						tempMat._elemData[(iRow + 0) * nCol0 + (iCol + 0)] += tempSum000 + tempSum001 + tempSum002 + tempSum003;
+						tempMat._elemData[(iRow + 0) * nCol0 + (iCol + 1)] += tempSum010 + tempSum011 + tempSum012 + tempSum013;
+						tempMat._elemData[(iRow + 1) * nCol0 + (iCol + 0)] += tempSum100 + tempSum101 + tempSum102 + tempSum103;
+						tempMat._elemData[(iRow + 1) * nCol0 + (iCol + 1)] += tempSum110 + tempSum111 + tempSum112 + tempSum113;
 					}
 				}
 			}
